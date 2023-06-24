@@ -1,3 +1,4 @@
+from collections import defaultdict
 from absl import app, flags, logging
 from ml_collections import config_flags
 from accelerate import Accelerator
@@ -6,6 +7,7 @@ from accelerate.logging import get_logger
 from diffusers import StableDiffusionPipeline, DDIMScheduler
 from diffusers.loaders import AttnProcsLayers
 from diffusers.models.attention_processor import LoRAAttnProcessor
+import numpy as np
 import ddpo_pytorch.prompts
 import ddpo_pytorch.rewards
 from ddpo_pytorch.stat_tracking import PerPromptStatTracker
@@ -20,7 +22,7 @@ tqdm = partial(tqdm.tqdm, dynamic_ncols=True)
 
 
 FLAGS = flags.FLAGS
-config_flags.DEFINE_config_file("config", "config/base.py", "Training configuration.")
+config_flags.DEFINE_config_file("config", "ddpo_pytorch/config/base.py", "Training configuration.")
 
 logger = get_logger(__name__)
 
@@ -32,9 +34,10 @@ def main(_):
         log_with="wandb",
         mixed_precision=config.mixed_precision,
         project_dir=config.logdir,
+        gradient_accumulation_steps=config.train.gradient_accumulation_steps * config.sample.num_steps,
     )
     if accelerator.is_main_process:
-        accelerator.init_trackers(project_name="ddpo-pytorch", config=config)
+        accelerator.init_trackers(project_name="ddpo-pytorch", config=config.to_dict())
     logger.info(config)
 
     # set seed
@@ -93,14 +96,6 @@ def main(_):
     if config.allow_tf32:
         torch.backends.cuda.matmul.allow_tf32 = True
 
-    if config.train.scale_lr:
-        config.train.learning_rate = (
-            config.train.learning_rate
-            * config.train.gradient_accumulation_steps
-            * config.train.batch_size
-            * accelerator.num_processes
-        )
-
     # Initialize the optimizer
     if config.train.use_8bit_adam:
         try:
@@ -135,9 +130,6 @@ def main(_):
         config.train.batch_size * accelerator.num_processes * config.train.gradient_accumulation_steps
     )
 
-    assert config.sample.batch_size % config.train.batch_size == 0
-    assert samples_per_epoch % total_train_batch_size == 0
-
     logger.info("***** Running training *****")
     logger.info(f"  Num Epochs = {config.num_epochs}")
     logger.info(f"  Sample batch size per device = {config.sample.batch_size}")
@@ -148,6 +140,9 @@ def main(_):
     logger.info(f"  Total train batch size (w. parallel, distributed & accumulation) = {total_train_batch_size}")
     logger.info(f"  Number of gradient updates per inner epoch = {samples_per_epoch // total_train_batch_size}")
     logger.info(f"  Number of inner epochs = {config.train.num_inner_epochs}")
+
+    assert config.sample.batch_size % config.train.batch_size == 0
+    assert samples_per_epoch % total_train_batch_size == 0
 
     neg_prompt_embed = pipeline.text_encoder(
         pipeline.tokenizer(
@@ -237,6 +232,8 @@ def main(_):
             {"images": [wandb.Image(image, caption=prompt) for image, prompt in zip(images, prompts)]},
             step=global_step,
         )
+        # from PIL import Image
+        # Image.fromarray((images[0].cpu().numpy().transpose(1, 2, 0) * 255).astype(np.uint8)).save(f"test.png")
 
         # per-prompt mean/std tracking
         if config.per_prompt_stat_tracking:
@@ -267,12 +264,6 @@ def main(_):
             indices = torch.randperm(total_batch_size, device=accelerator.device)
             samples = {k: v[indices] for k, v in samples.items()}
 
-            # shuffle along time dimension, independently for each sample
-            for i in range(total_batch_size):
-                indices = torch.randperm(num_timesteps, device=accelerator.device)
-                for key in ["timesteps", "latents", "next_latents"]:
-                    samples[key][i] = samples[key][i][indices]
-
             # rebatch for training
             samples_batched = {k: v.reshape(-1, config.train.batch_size, *v.shape[1:]) for k, v in samples.items()}
 
@@ -292,6 +283,7 @@ def main(_):
                 else:
                     embeds = sample["prompt_embeds"]
 
+                info = defaultdict(list)
                 for j in tqdm(
                     range(num_timesteps),
                     desc=f"Timestep",
@@ -335,18 +327,12 @@ def main(_):
                         loss = torch.mean(torch.maximum(unclipped_loss, clipped_loss))
 
                         # debugging values
-                        info = {}
                         # John Schulman says that (ratio - 1) - log(ratio) is a better
                         # estimator, but most existing code uses this so...
                         # http://joschu.net/blog/kl-approx.html
-                        info["approx_kl"] = 0.5 * torch.mean((log_prob - sample["log_probs"][:, j]) ** 2)
-                        info["clipfrac"] = torch.mean((torch.abs(ratio - 1.0) > config.train.clip_range).float())
-                        info["loss"] = loss
-
-                        # log training-related stuff
-                        info.update({"epoch": epoch, "inner_epoch": inner_epoch, "timestep": j})
-                        accelerator.log(info, step=global_step)
-                        global_step += 1
+                        info["approx_kl"].append(0.5 * torch.mean((log_prob - sample["log_probs"][:, j]) ** 2))
+                        info["clipfrac"].append(torch.mean((torch.abs(ratio - 1.0) > config.train.clip_range).float()))
+                        info["loss"].append(loss)
 
                         # backward pass
                         accelerator.backward(loss)
@@ -354,6 +340,14 @@ def main(_):
                             accelerator.clip_grad_norm_(lora_layers.parameters(), config.train.max_grad_norm)
                         optimizer.step()
                         optimizer.zero_grad()
+
+                    if accelerator.sync_gradients:
+                        # log training-related stuff
+                        info = {k: torch.mean(torch.stack(v)) for k, v in info.items()}
+                        info.update({"epoch": epoch, "inner_epoch": inner_epoch})
+                        accelerator.log(info, step=global_step)
+                        global_step += 1
+                        info = defaultdict(list)
 
 
 if __name__ == "__main__":

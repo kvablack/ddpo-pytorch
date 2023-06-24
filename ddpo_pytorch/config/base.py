@@ -18,7 +18,6 @@ def get_config():
 
     # training
     config.train = train = ml_collections.ConfigDict()
-    train.mixed_precision = "fp16"
     train.batch_size = 1
     train.use_8bit_adam = False
     train.scale_lr = False
@@ -27,7 +26,7 @@ def get_config():
     train.adam_beta2 = 0.999
     train.adam_weight_decay = 1e-4
     train.adam_epsilon = 1e-8
-    train.gradient_accumulation_steps = 32
+    train.gradient_accumulation_steps = 1
     train.max_grad_norm = 1.0
     train.num_inner_epochs = 1
     train.cfg = True
@@ -39,8 +38,8 @@ def get_config():
     sample.num_steps = 30
     sample.eta = 1.0
     sample.guidance_scale = 5.0
-    sample.batch_size = 4
-    sample.num_batches_per_epoch = 8
+    sample.batch_size = 1
+    sample.num_batches_per_epoch = 1
 
     # prompting
     config.prompt_fn = "imagenet_animals"

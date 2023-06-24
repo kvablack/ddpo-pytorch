@@ -1,10 +1,16 @@
 from setuptools import setup, find_packages
 
 setup(
-    name='ddpo-pytorch',
-    version='0.0.1',
+    name="ddpo-pytorch",
+    version="0.0.1",
     packages=["ddpo_pytorch"],
     install_requires=[
-        "ml-collections", "absl-py"
+        "ml-collections",
+        "absl-py",
+        "diffusers[torch]==0.17.1",
+        "wandb",
+        "torchvision",
+        "inflect==6.0.4",
+        "transformers==4.30.2",
     ],
 )

@@ -14,6 +14,11 @@ from diffusers.utils import randn_tensor
 from diffusers.schedulers.scheduling_ddim import DDIMSchedulerOutput, DDIMScheduler
 
 
+def _left_broadcast(t, shape):
+    assert t.ndim <= len(shape)
+    return t.reshape(t.shape + (1,) * (len(shape) - t.ndim)).broadcast_to(shape)
+
+
 def _get_variance(self, timestep, prev_timestep):
     alpha_prod_t = torch.gather(self.alphas_cumprod, 0, timestep.cpu()).to(timestep.device)
     alpha_prod_t_prev = torch.where(
@@ -82,13 +87,16 @@ def ddim_step_with_logprob(
 
     # 1. get previous step value (=t-1)
     prev_timestep = timestep - self.config.num_train_timesteps // self.num_inference_steps
+    # to prevent OOB on gather
     prev_timestep = torch.clamp(prev_timestep, 0, self.config.num_train_timesteps - 1)
 
     # 2. compute alphas, betas
-    alpha_prod_t = self.alphas_cumprod.gather(0, timestep.cpu()).to(timestep.device)
+    alpha_prod_t = self.alphas_cumprod.gather(0, timestep.cpu())
     alpha_prod_t_prev = torch.where(
         prev_timestep.cpu() >= 0, self.alphas_cumprod.gather(0, prev_timestep.cpu()), self.final_alpha_cumprod
-    ).to(timestep.device)
+    )
+    alpha_prod_t = _left_broadcast(alpha_prod_t, sample.shape).to(sample.device)
+    alpha_prod_t_prev = _left_broadcast(alpha_prod_t_prev, sample.shape).to(sample.device)
 
     beta_prod_t = 1 - alpha_prod_t
 
@@ -121,6 +129,7 @@ def ddim_step_with_logprob(
     # σ_t = sqrt((1 − α_t−1)/(1 − α_t)) * sqrt(1 − α_t/α_t−1)
     variance = _get_variance(self, timestep, prev_timestep)
     std_dev_t = eta * variance ** (0.5)
+    std_dev_t = _left_broadcast(std_dev_t, sample.shape).to(sample.device)
 
     if use_clipped_model_output:
         # the pred_epsilon is always re-derived from the clipped x_0 in Glide
@@ -153,4 +162,4 @@ def ddim_step_with_logprob(
     # mean along all but batch dimension
     log_prob = log_prob.mean(dim=tuple(range(1, log_prob.ndim)))
 
-    return prev_sample, log_prob
+    return prev_sample.type(sample.dtype), log_prob
