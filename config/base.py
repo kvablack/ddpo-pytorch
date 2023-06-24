@@ -25,9 +25,9 @@ def get_config():
     train.learning_rate = 1e-4
     train.adam_beta1 = 0.9
     train.adam_beta2 = 0.999
-    train.adam_weight_decay = 1e-2
+    train.adam_weight_decay = 1e-4
     train.adam_epsilon = 1e-8
-    train.gradient_accumulation_steps = 1
+    train.gradient_accumulation_steps = 32
     train.max_grad_norm = 1.0
     train.num_inner_epochs = 1
     train.cfg = True
@@ -36,11 +36,11 @@ def get_config():
 
     # sampling
     config.sample = sample = ml_collections.ConfigDict()
-    sample.num_steps = 5
+    sample.num_steps = 30
     sample.eta = 1.0
     sample.guidance_scale = 5.0
-    sample.batch_size = 1
-    sample.num_batches_per_epoch = 4
+    sample.batch_size = 4
+    sample.num_batches_per_epoch = 8
 
     # prompting
     config.prompt_fn = "imagenet_animals"
@@ -50,7 +50,7 @@ def get_config():
     config.reward_fn = "jpeg_compressibility"
 
     config.per_prompt_stat_tracking = ml_collections.ConfigDict()
-    config.per_prompt_stat_tracking.buffer_size = 128
+    config.per_prompt_stat_tracking.buffer_size = 64
     config.per_prompt_stat_tracking.min_count = 16
 
     return config

@@ -12,7 +12,11 @@ from ddpo_pytorch.stat_tracking import PerPromptStatTracker
 from ddpo_pytorch.diffusers_patch.pipeline_with_logprob import pipeline_with_logprob
 from ddpo_pytorch.diffusers_patch.ddim_with_logprob import ddim_step_with_logprob
 import torch
+import wandb
+from functools import partial
 import tqdm
+
+tqdm = partial(tqdm.tqdm, dynamic_ncols=True)
 
 
 FLAGS = flags.FLAGS
@@ -25,7 +29,7 @@ def main(_):
     # basic Accelerate and logging setup
     config = FLAGS.config
     accelerator = Accelerator(
-        log_with="all",
+        log_with="wandb",
         mixed_precision=config.mixed_precision,
         project_dir=config.logdir,
     )
@@ -163,11 +167,12 @@ def main(_):
             config.per_prompt_stat_tracking.min_count,
         )
 
+    global_step = 0
     for epoch in range(config.num_epochs):
         #################### SAMPLING ####################
         samples = []
         prompts = []
-        for i in tqdm.tqdm(
+        for i in tqdm(
             range(config.sample.num_batches_per_epoch),
             desc=f"Epoch {epoch}: sampling",
             disable=not accelerator.is_local_main_process,
@@ -216,7 +221,7 @@ def main(_):
                     "latents": latents[:, :-1],  # each entry is the latent before timestep t
                     "next_latents": latents[:, 1:],  # each entry is the latent after timestep t
                     "log_probs": log_probs,
-                    "rewards": torch.as_tensor(rewards),
+                    "rewards": torch.as_tensor(rewards, device=accelerator.device),
                 }
             )
 
@@ -225,6 +230,13 @@ def main(_):
 
         # gather rewards across processes
         rewards = accelerator.gather(samples["rewards"]).cpu().numpy()
+
+        # log sample-related stuff
+        accelerator.log({"reward": rewards, "epoch": epoch}, step=global_step)
+        accelerator.log(
+            {"images": [wandb.Image(image, caption=prompt) for image, prompt in zip(images, prompts)]},
+            step=global_step,
+        )
 
         # per-prompt mean/std tracking
         if config.per_prompt_stat_tracking:
@@ -268,10 +280,11 @@ def main(_):
             samples_batched = [dict(zip(samples_batched, x)) for x in zip(*samples_batched.values())]
 
             # train
-            for i, sample in tqdm.tqdm(
+            for i, sample in tqdm(
                 list(enumerate(samples_batched)),
-                desc=f"Outer epoch {epoch}, inner epoch {inner_epoch}: training",
+                desc=f"Epoch {epoch}.{inner_epoch}: training",
                 position=0,
+                disable=not accelerator.is_local_main_process,
             ):
                 if config.train.cfg:
                     # concat negative prompts to sample prompts to avoid two forward passes
@@ -279,11 +292,12 @@ def main(_):
                 else:
                     embeds = sample["prompt_embeds"]
 
-                for j in tqdm.trange(
-                    num_timesteps,
+                for j in tqdm(
+                    range(num_timesteps),
                     desc=f"Timestep",
                     position=1,
                     leave=False,
+                    disable=not accelerator.is_local_main_process,
                 ):
                     with accelerator.accumulate(pipeline.unet):
                         if config.train.cfg:
@@ -311,7 +325,7 @@ def main(_):
 
                         # ppo logic
                         advantages = torch.clamp(
-                            sample["advantages"][:, j], -config.train.adv_clip_max, config.train.adv_clip_max
+                            sample["advantages"], -config.train.adv_clip_max, config.train.adv_clip_max
                         )
                         ratio = torch.exp(log_prob - sample["log_probs"][:, j])
                         unclipped_loss = -advantages * ratio
@@ -326,8 +340,13 @@ def main(_):
                         # estimator, but most existing code uses this so...
                         # http://joschu.net/blog/kl-approx.html
                         info["approx_kl"] = 0.5 * torch.mean((log_prob - sample["log_probs"][:, j]) ** 2)
-                        info["clipfrac"] = torch.mean(torch.abs(ratio - 1.0) > config.train.clip_range)
+                        info["clipfrac"] = torch.mean((torch.abs(ratio - 1.0) > config.train.clip_range).float())
                         info["loss"] = loss
+
+                        # log training-related stuff
+                        info.update({"epoch": epoch, "inner_epoch": inner_epoch, "timestep": j})
+                        accelerator.log(info, step=global_step)
+                        global_step += 1
 
                         # backward pass
                         accelerator.backward(loss)
