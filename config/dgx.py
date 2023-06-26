@@ -1,5 +1,9 @@
 import ml_collections
-from ddpo_pytorch.config import base
+import imp
+import os
+
+base = imp.load_source("base", os.path.join(os.path.dirname(__file__), "base.py"))
+
 
 def get_config():
     config = base.get_config()
