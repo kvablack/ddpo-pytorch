@@ -45,7 +45,7 @@ def main(_):
     logger.info(config)
 
     # set seed
-    set_seed(config.seed)
+    set_seed(config.seed, device_specific=True)
 
     # load scheduler, tokenizer and models.
     pipeline = StableDiffusionPipeline.from_pretrained(config.pretrained.model, revision=config.pretrained.revision)
