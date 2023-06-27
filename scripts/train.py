@@ -1,7 +1,7 @@
 from collections import defaultdict
 import contextlib
 import os
-from absl import app, flags, logging
+from absl import app, flags
 from ml_collections import config_flags
 from accelerate import Accelerator
 from accelerate.utils import set_seed

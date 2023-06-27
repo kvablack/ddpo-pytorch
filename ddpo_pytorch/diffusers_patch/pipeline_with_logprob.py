@@ -1,6 +1,8 @@
 # Copied from https://github.com/huggingface/diffusers/blob/fc6acb6b97e93d58cb22b5fee52d884d77ce84d8/src/diffusers/pipelines/stable_diffusion/pipeline_stable_diffusion.py
 # with the following modifications:
-# -
+# - It uses the patched version of `ddim_step_with_logprob` from `ddim_with_logprob.py`. As such, it only supports the
+#   `ddim` scheduler.
+# - It returns all the intermediate latents of the denoising process as well as the log probs of each denoising step.
 
 from typing import Any, Callable, Dict, List, Optional, Union
 
@@ -10,7 +12,6 @@ from diffusers.pipelines.stable_diffusion.pipeline_stable_diffusion import (
     StableDiffusionPipeline,
     rescale_noise_cfg,
 )
-from diffusers.schedulers.scheduling_ddim import DDIMScheduler
 from .ddim_with_logprob import ddim_step_with_logprob
 
 
