@@ -40,6 +40,10 @@ def imagenet_dogs():
     return from_file("imagenet_classes.txt", 151, 269)
 
 
+def simple_animals():
+    return from_file("simple_animals.txt")
+
+
 def nouns_activities(nouns_file, activities_file):
     nouns = _load_lines(nouns_file)
     activities = _load_lines(activities_file)

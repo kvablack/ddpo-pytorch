@@ -42,7 +42,7 @@ def main(_):
     )
     if accelerator.is_main_process:
         accelerator.init_trackers(project_name="ddpo-pytorch", config=config.to_dict())
-    logger.info(config)
+    logger.info(f"\n{config}")
 
     # set seed
     set_seed(config.seed, device_specific=True)
