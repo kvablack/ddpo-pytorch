@@ -263,8 +263,8 @@ def main(_):
             accelerator.log(
                 {
                     "images": [
-                        wandb.Image(os.path.join(tmpdir, f"{i}.jpg"), caption=prompt)
-                        for i, prompt in enumerate(prompts)
+                        wandb.Image(os.path.join(tmpdir, f"{i}.jpg"), caption=f"{prompt:.25} | {reward:.2f}")
+                        for i, (prompt, reward) in enumerate(zip(prompts, rewards))
                     ],
                 },
                 step=global_step,
