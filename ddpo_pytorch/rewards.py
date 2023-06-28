@@ -35,8 +35,6 @@ def aesthetic_score():
     scorer = AestheticScorer().cuda()
 
     def _fn(images, prompts, metadata):
-        if not isinstance(images, torch.Tensor):
-            images = torch.as_tensor(images)
         scores = scorer(images)
         return scores, {}
 

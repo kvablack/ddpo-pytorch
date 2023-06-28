@@ -32,14 +32,15 @@ def get_config():
     train.cfg = True
     train.adv_clip_max = 10
     train.clip_range = 1e-4
+    train.timestep_fraction = 1.0
 
     # sampling
     config.sample = sample = ml_collections.ConfigDict()
-    sample.num_steps = 5
+    sample.num_steps = 10
     sample.eta = 1.0
     sample.guidance_scale = 5.0
     sample.batch_size = 1
-    sample.num_batches_per_epoch = 1
+    sample.num_batches_per_epoch = 2
 
     # prompting
     config.prompt_fn = "imagenet_animals"
@@ -49,7 +50,7 @@ def get_config():
     config.reward_fn = "jpeg_compressibility"
 
     config.per_prompt_stat_tracking = ml_collections.ConfigDict()
-    config.per_prompt_stat_tracking.buffer_size = 64
+    config.per_prompt_stat_tracking.buffer_size = 16
     config.per_prompt_stat_tracking.min_count = 16
 
     return config
