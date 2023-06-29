@@ -5,12 +5,16 @@ def get_config():
     config = ml_collections.ConfigDict()
 
     # misc
+    config.run_name = ""
     config.seed = 42
     config.logdir = "logs"
     config.num_epochs = 100
+    config.save_freq = 20
+    config.num_checkpoint_limit = 5
     config.mixed_precision = "fp16"
     config.allow_tf32 = True
     config.use_lora = True
+    config.resume_from = ""
 
     # pretrained model initialization
     config.pretrained = pretrained = ml_collections.ConfigDict()
