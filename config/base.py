@@ -42,7 +42,7 @@ def get_config():
     ###### Sampling ######
     config.sample = sample = ml_collections.ConfigDict()
     # number of sampler inference steps.
-    sample.num_steps = 10
+    sample.num_steps = 50
     # eta parameter for the DDIM sampler. this controls the amount of noise injected into the sampling process, with 0.0
     # being fully deterministic and 1.0 being equivalent to the DDPM sampler.
     sample.eta = 1.0
@@ -61,7 +61,7 @@ def get_config():
     # whether to use the 8bit Adam optimizer from bitsandbytes.
     train.use_8bit_adam = False
     # learning rate.
-    train.learning_rate = 1e-4
+    train.learning_rate = 3e-4
     # Adam beta1.
     train.adam_beta1 = 0.9
     # Adam beta2.
@@ -82,7 +82,7 @@ def get_config():
     # sampling will be used during training.
     train.cfg = True
     # clip advantages to the range [-adv_clip_max, adv_clip_max].
-    train.adv_clip_max = 10
+    train.adv_clip_max = 5
     # the PPO clip range.
     train.clip_range = 1e-4
     # the fraction of timesteps to train on. if set to less than 1.0, the model will be trained on a subset of the
