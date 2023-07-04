@@ -34,7 +34,7 @@ However, these are not defined explicitly but are instead defined implicitly by 
 
 (This assumes that `train.num_inner_epochs == 1`. If this is set to a higher number, then training will loop over the same batch of images multiple times before generating a new batch of images, and the number of training steps per epoch will be multiplied accordingly.)
 
-At the beginning of each training run, the script will print out the calculated value for the number of images generated per epoch, the effective training batch size, and the number of training steps per epoch. Make sure to double-check it!
+At the beginning of each training run, the script will print out the calculated value for the number of images generated per epoch, the effective total training batch size, and the number of training steps per epoch. Make sure to double-check these numbers!
 
 ## Reproducing Results
 The image at the top of this README was generated using LoRA! However, I did use a fairly powerful DGX machine with 8xA100 GPUs, on which each experiment took about 4 hours for 100 epochs. In order to run the same experiments with a single small GPU, you would set `sample.batch_size = train.batch_size = 1` and multiply `sample.num_batches_per_epoch` and `train.gradient_accumulation_steps` accordingly.
