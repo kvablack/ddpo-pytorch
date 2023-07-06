@@ -5,6 +5,7 @@ This is an implementation of [Denoising Diffusion Policy Optimization (DDPO)](ht
 ![DDPO](teaser.jpg)
 
 ## Installation
+Requires Python 3.10 or newer.
 
 ```bash
 git clone git@github.com:kvablack/ddpo-pytorch.git
