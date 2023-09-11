@@ -50,6 +50,6 @@ If you want to run the LLaVA prompt-image alignment experiments, you need to ded
 ## Reward Curves
 <img src="https://github.com/kvablack/ddpo-pytorch/assets/12429600/593c9be3-e2a7-45d8-b1ae-ca4f77197c18" width="49%">
 <img src="https://github.com/kvablack/ddpo-pytorch/assets/12429600/d12fef0a-68b8-4cef-a9b8-cb1b6878fcec" width="49%">
-<img src="https://github.com/kvablack/ddpo-pytorch/assets/12429600/c1605879-a7e4-4d64-886b-eb71800b646a" width="49%">
+<img src="https://github.com/kvablack/ddpo-pytorch/assets/12429600/669076d5-2826-4b77-835b-d82e0c18a2a6" width="49%">
 <img src="https://github.com/kvablack/ddpo-pytorch/assets/12429600/393a929e-36af-46f2-8022-33384bdae1c8" width="49%">
 
