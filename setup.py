@@ -9,6 +9,7 @@ setup(
         "ml-collections",
         "absl-py",
         "diffusers[torch]==0.17.1",
+        "accelerate==0.17",
         "wandb",
         "torchvision",
         "inflect==6.0.4",
