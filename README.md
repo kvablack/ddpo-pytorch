@@ -53,3 +53,8 @@ If you want to run the LLaVA prompt-image alignment experiments, you need to ded
 <img src="https://github.com/kvablack/ddpo-pytorch/assets/12429600/669076d5-2826-4b77-835b-d82e0c18a2a6" width="49%">
 <img src="https://github.com/kvablack/ddpo-pytorch/assets/12429600/393a929e-36af-46f2-8022-33384bdae1c8" width="49%">
 
+## Training using 🤗 `trl`
+
+🤗 `trl` provides a [`DDPOTrainer` class](https://huggingface.co/docs/trl/ddpo_trainer) which lets you fine-tune Stable Diffusion on different reward functions using DDPO. The integration supports LoRA, too.  You can check out the [supplementary blog post](https://huggingface.co/blog/trl-ddpo) for additional guidance. The DDPO integration was contributed by @metric-space to `trl`. 
+
+
