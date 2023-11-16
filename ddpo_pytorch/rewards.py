@@ -35,7 +35,11 @@ def aesthetic_score():
     scorer = AestheticScorer(dtype=torch.float32).cuda()
 
     def _fn(images, prompts, metadata):
-        images = (images * 255).round().clamp(0, 255).to(torch.uint8)
+        if isinstance(images, torch.Tensor):
+            images = (images * 255).round().clamp(0, 255).to(torch.uint8)
+        else:
+            images = images.transpose(0, 3, 1, 2)  # NHWC -> NCHW
+            images = torch.tensor(images, dtype=torch.uint8)
         scores = scorer(images)
         return scores, {}
 
@@ -55,7 +59,9 @@ def llava_strict_satisfaction():
     batch_size = 4
     url = "http://127.0.0.1:8085"
     sess = requests.Session()
-    retries = Retry(total=1000, backoff_factor=1, status_forcelist=[500], allowed_methods=False)
+    retries = Retry(
+        total=1000, backoff_factor=1, status_forcelist=[500], allowed_methods=False
+    )
     sess.mount("http://", HTTPAdapter(max_retries=retries))
 
     def _fn(images, prompts, metadata):
@@ -121,7 +127,9 @@ def llava_bertscore():
     batch_size = 16
     url = "http://127.0.0.1:8085"
     sess = requests.Session()
-    retries = Retry(total=1000, backoff_factor=1, status_forcelist=[500], allowed_methods=False)
+    retries = Retry(
+        total=1000, backoff_factor=1, status_forcelist=[500], allowed_methods=False
+    )
     sess.mount("http://", HTTPAdapter(max_retries=retries))
 
     def _fn(images, prompts, metadata):
@@ -152,8 +160,11 @@ def llava_bertscore():
             # format for LLaVA server
             data = {
                 "images": jpeg_images,
-                "queries": [["Answer concisely: what is going on in this image?"]] * len(image_batch),
-                "answers": [[f"The image contains {prompt}"] for prompt in prompt_batch],
+                "queries": [["Answer concisely: what is going on in this image?"]]
+                * len(image_batch),
+                "answers": [
+                    [f"The image contains {prompt}"] for prompt in prompt_batch
+                ],
             }
             data_bytes = pickle.dumps(data)
 
@@ -167,7 +178,9 @@ def llava_bertscore():
             all_scores += scores.tolist()
 
             # save the precision and f1 scores for analysis
-            all_info["precision"] += np.array(response_data["precision"]).squeeze().tolist()
+            all_info["precision"] += (
+                np.array(response_data["precision"]).squeeze().tolist()
+            )
             all_info["f1"] += np.array(response_data["f1"]).squeeze().tolist()
             all_info["outputs"] += np.array(response_data["outputs"]).squeeze().tolist()
 

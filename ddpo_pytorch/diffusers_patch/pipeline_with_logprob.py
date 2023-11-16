@@ -116,7 +116,15 @@ def pipeline_with_logprob(
     width = width or self.unet.config.sample_size * self.vae_scale_factor
 
     # 1. Check inputs. Raise error if not correct
-    self.check_inputs(prompt, height, width, callback_steps, negative_prompt, prompt_embeds, negative_prompt_embeds)
+    self.check_inputs(
+        prompt,
+        height,
+        width,
+        callback_steps,
+        negative_prompt,
+        prompt_embeds,
+        negative_prompt_embeds,
+    )
 
     # 2. Define call parameters
     if prompt is not None and isinstance(prompt, str):
@@ -133,7 +141,11 @@ def pipeline_with_logprob(
     do_classifier_free_guidance = guidance_scale > 1.0
 
     # 3. Encode input prompt
-    text_encoder_lora_scale = cross_attention_kwargs.get("scale", None) if cross_attention_kwargs is not None else None
+    text_encoder_lora_scale = (
+        cross_attention_kwargs.get("scale", None)
+        if cross_attention_kwargs is not None
+        else None
+    )
     prompt_embeds = self._encode_prompt(
         prompt,
         device,
@@ -172,7 +184,9 @@ def pipeline_with_logprob(
     with self.progress_bar(total=num_inference_steps) as progress_bar:
         for i, t in enumerate(timesteps):
             # expand the latents if we are doing classifier free guidance
-            latent_model_input = torch.cat([latents] * 2) if do_classifier_free_guidance else latents
+            latent_model_input = (
+                torch.cat([latents] * 2) if do_classifier_free_guidance else latents
+            )
             latent_model_input = self.scheduler.scale_model_input(latent_model_input, t)
 
             # predict the noise residual
@@ -187,27 +201,39 @@ def pipeline_with_logprob(
             # perform guidance
             if do_classifier_free_guidance:
                 noise_pred_uncond, noise_pred_text = noise_pred.chunk(2)
-                noise_pred = noise_pred_uncond + guidance_scale * (noise_pred_text - noise_pred_uncond)
+                noise_pred = noise_pred_uncond + guidance_scale * (
+                    noise_pred_text - noise_pred_uncond
+                )
 
             if do_classifier_free_guidance and guidance_rescale > 0.0:
                 # Based on 3.4. in https://arxiv.org/pdf/2305.08891.pdf
-                noise_pred = rescale_noise_cfg(noise_pred, noise_pred_text, guidance_rescale=guidance_rescale)
+                noise_pred = rescale_noise_cfg(
+                    noise_pred, noise_pred_text, guidance_rescale=guidance_rescale
+                )
 
             # compute the previous noisy sample x_t -> x_t-1
-            latents, log_prob = ddim_step_with_logprob(self.scheduler, noise_pred, t, latents, **extra_step_kwargs)
+            latents, log_prob = ddim_step_with_logprob(
+                self.scheduler, noise_pred, t, latents, **extra_step_kwargs
+            )
 
             all_latents.append(latents)
             all_log_probs.append(log_prob)
 
             # call the callback, if provided
-            if i == len(timesteps) - 1 or ((i + 1) > num_warmup_steps and (i + 1) % self.scheduler.order == 0):
+            if i == len(timesteps) - 1 or (
+                (i + 1) > num_warmup_steps and (i + 1) % self.scheduler.order == 0
+            ):
                 progress_bar.update()
                 if callback is not None and i % callback_steps == 0:
                     callback(i, t, latents)
 
     if not output_type == "latent":
-        image = self.vae.decode(latents / self.vae.config.scaling_factor, return_dict=False)[0]
-        image, has_nsfw_concept = self.run_safety_checker(image, device, prompt_embeds.dtype)
+        image = self.vae.decode(
+            latents / self.vae.config.scaling_factor, return_dict=False
+        )[0]
+        image, has_nsfw_concept = self.run_safety_checker(
+            image, device, prompt_embeds.dtype
+        )
     else:
         image = latents
         has_nsfw_concept = None
@@ -217,7 +243,9 @@ def pipeline_with_logprob(
     else:
         do_denormalize = [not has_nsfw for has_nsfw in has_nsfw_concept]
 
-    image = self.image_processor.postprocess(image, output_type=output_type, do_denormalize=do_denormalize)
+    image = self.image_processor.postprocess(
+        image, output_type=output_type, do_denormalize=do_denormalize
+    )
 
     # Offload last model to CPU
     if hasattr(self, "final_offload_hook") and self.final_offload_hook is not None:
