@@ -1,6 +1,9 @@
 from collections import defaultdict
 import contextlib
+import copy
 import os
+
+os.environ["CUBLAS_WORKSPACE_CONFIG"] = ":16:8"
 import datetime
 from concurrent import futures
 import time
@@ -35,6 +38,9 @@ logger = get_logger(__name__)
 
 
 def main(_):
+    torch.backends.cudnn.benchmark = False
+    torch.use_deterministic_algorithms(True)
+
     # basic Accelerate and logging setup
     config = FLAGS.config
 
@@ -122,6 +128,17 @@ def main(_):
     pipeline.text_encoder.to(accelerator.device, dtype=inference_dtype)
     if config.use_lora:
         pipeline.unet.to(accelerator.device, dtype=inference_dtype)
+    else:
+        pipeline.unet.to(accelerator.device, dtype=torch.float32)
+
+    # make reference unet for computing KL penalty
+    if config.train.kl_penalty_weight is not None:
+        ref_unet = copy.deepcopy(pipeline.unet)
+        kl_penalty_weight = config.train.kl_penalty_weight
+    else:
+        # dummy values to avoid computation later
+        ref_unet = None
+        kl_penalty_weight = 0.0
 
     if config.use_lora:
         # Set correct lora layers
@@ -158,6 +175,10 @@ def main(_):
         unet = _Wrapper(pipeline.unet.attn_processors)
     else:
         unet = pipeline.unet
+
+    # make sure all trainable parameters are in float32
+    for param in unet.parameters():
+        param.data = param.to(torch.float32)
 
     # set up diffusers-friendly checkpoint saving with Accelerate
 
@@ -207,7 +228,7 @@ def main(_):
     # Initialize the optimizer
     if config.train.use_8bit_adam:
         try:
-            import bitsandbytes as bnb
+            import bitsandbytes as bnb  # type: ignore
         except ImportError:
             raise ImportError(
                 "Please install bitsandbytes to use 8-bit Adam. You can do so by running `pip install bitsandbytes`"
@@ -333,7 +354,7 @@ def main(_):
 
             # sample
             with autocast():
-                images, _, latents, log_probs = pipeline_with_logprob(
+                images, _, latents, log_probs, kl_divs = pipeline_with_logprob(
                     pipeline,
                     prompt_embeds=prompt_embeds,
                     negative_prompt_embeds=sample_neg_prompt_embeds,
@@ -341,12 +362,14 @@ def main(_):
                     guidance_scale=config.sample.guidance_scale,
                     eta=config.sample.eta,
                     output_type="pt",
+                    ref_unet=ref_unet,
                 )
 
             latents = torch.stack(
                 latents, dim=1
             )  # (batch_size, num_steps + 1, 4, 64, 64)
-            log_probs = torch.stack(log_probs, dim=1)  # (batch_size, num_steps, 1)
+            log_probs = torch.stack(log_probs, dim=1)  # (batch_size, num_steps)
+            kl_divs = torch.stack(kl_divs, dim=1)  # (batch_size, num_steps)
             timesteps = pipeline.scheduler.timesteps.repeat(
                 config.sample.batch_size, 1
             )  # (batch_size, num_steps)
@@ -368,6 +391,7 @@ def main(_):
                         :, 1:
                     ],  # each entry is the latent after timestep t
                     "log_probs": log_probs,
+                    "kl_divs": kl_divs,
                     "rewards": rewards,
                 }
             )
@@ -409,16 +433,39 @@ def main(_):
                 step=global_step,
             )
 
-        # gather rewards across processes
+        # gather rewards across processes; shape (total_batch_size,)
         rewards = accelerator.gather(samples["rewards"]).cpu().numpy()
+        # gather KL divs across processes; shape (total_batch_size, num_timesteps)
+        kl_divs = accelerator.gather(samples["kl_divs"]).cpu().numpy()
+        # broadcast rewards across timesteps and subtract KL penalty
+        penalized_rewards = rewards[:, None] - kl_penalty_weight * kl_divs
+        assert penalized_rewards.shape == (samples_per_epoch, config.sample.num_steps)
+
+        # some visualizations
+        if accelerator.is_main_process:
+            kl_vs_timestep = wandb.Table(
+                data=list(enumerate(np.mean(kl_divs, axis=0))),
+                columns=["timestep", "kl_div"],
+            )
+            wandb.log(
+                {
+                    "kl_vs_timestep": wandb.plot.scatter(
+                        kl_vs_timestep, "timestep", "kl_div"
+                    ),
+                },
+                step=global_step,
+            )
 
         # log rewards and images
         accelerator.log(
             {
-                "reward": rewards,
+                "reward_hist": rewards,
+                "penalized_reward_hist": penalized_rewards.mean(-1),
                 "epoch": epoch,
                 "reward_mean": rewards.mean(),
                 "reward_std": rewards.std(),
+                "ref_kl_mean": kl_divs.mean(),
+                "penalized_reward_mean": penalized_rewards.mean(),
             },
             step=global_step,
         )
@@ -430,19 +477,28 @@ def main(_):
             prompts = pipeline.tokenizer.batch_decode(
                 prompt_ids, skip_special_tokens=True
             )
-            advantages = stat_tracker.update(prompts, rewards)
+            advantages = stat_tracker.update(prompts, penalized_rewards)
         else:
-            advantages = (rewards - rewards.mean()) / (rewards.std() + 1e-8)
+            advantages = (penalized_rewards - penalized_rewards.mean()) / (
+                penalized_rewards.std() + 1e-6
+            )
+
+        accelerator.log({"advantages": advantages.flatten()}, step=global_step)
 
         # ungather advantages; we only need to keep the entries corresponding to the samples on this process
         samples["advantages"] = (
             torch.as_tensor(advantages)
-            .reshape(accelerator.num_processes, -1)[accelerator.process_index]
+            .reshape(
+                accelerator.num_processes,
+                config.sample.batch_size * config.sample.num_batches_per_epoch,
+                config.sample.num_steps,
+            )[accelerator.process_index]
             .to(accelerator.device)
         )
 
         del samples["rewards"]
         del samples["prompt_ids"]
+        del samples["kl_divs"]
 
         total_batch_size, num_timesteps = samples["timesteps"].shape
         assert (
@@ -464,7 +520,13 @@ def main(_):
                     for _ in range(total_batch_size)
                 ]
             )
-            for key in ["timesteps", "latents", "next_latents", "log_probs"]:
+            for key in [
+                "timesteps",
+                "latents",
+                "next_latents",
+                "log_probs",
+                "advantages",
+            ]:
                 samples[key] = samples[key][
                     torch.arange(total_batch_size, device=accelerator.device)[:, None],
                     perms,
@@ -537,7 +599,7 @@ def main(_):
 
                         # ppo logic
                         advantages = torch.clamp(
-                            sample["advantages"],
+                            sample["advantages"][:, j],
                             -config.train.adv_clip_max,
                             config.train.adv_clip_max,
                         )
@@ -554,7 +616,7 @@ def main(_):
                         # John Schulman says that (ratio - 1) - log(ratio) is a better
                         # estimator, but most existing code uses this so...
                         # http://joschu.net/blog/kl-approx.html
-                        info["approx_kl"].append(
+                        info["ppo_approx_kl"].append(
                             0.5
                             * torch.mean((log_prob - sample["log_probs"][:, j]) ** 2)
                         )

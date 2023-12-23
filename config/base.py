@@ -1,8 +1,8 @@
-import ml_collections
+from ml_collections.config_dict import ConfigDict, placeholder
 
 
 def get_config():
-    config = ml_collections.ConfigDict()
+    config = ConfigDict()
 
     ###### General ######
     # run name for wandb logging and checkpoint saving -- if not provided, will be auto-generated based on the datetime.
@@ -33,14 +33,14 @@ def get_config():
     config.use_lora = True
 
     ###### Pretrained Model ######
-    config.pretrained = pretrained = ml_collections.ConfigDict()
+    config.pretrained = pretrained = ConfigDict()
     # base model to load. either a path to a local directory, or a model name from the HuggingFace model hub.
     pretrained.model = "runwayml/stable-diffusion-v1-5"
     # revision of the model to load.
     pretrained.revision = "main"
 
     ###### Sampling ######
-    config.sample = sample = ml_collections.ConfigDict()
+    config.sample = sample = ConfigDict()
     # number of sampler inference steps.
     sample.num_steps = 50
     # eta parameter for the DDIM sampler. this controls the amount of noise injected into the sampling process, with 0.0
@@ -55,7 +55,7 @@ def get_config():
     sample.num_batches_per_epoch = 2
 
     ###### Training ######
-    config.train = train = ml_collections.ConfigDict()
+    config.train = train = ConfigDict()
     # batch size (per GPU!) to use for training.
     train.batch_size = 1
     # whether to use the 8bit Adam optimizer from bitsandbytes.
@@ -88,6 +88,8 @@ def get_config():
     # the fraction of timesteps to train on. if set to less than 1.0, the model will be trained on a subset of the
     # timesteps for each sample. this will speed up training but reduce the accuracy of policy gradient estimates.
     train.timestep_fraction = 1.0
+    # the KL penalty weight. if not provided, no KL penalty will be used.
+    train.kl_penalty_weight = placeholder(float)
 
     ###### Prompt Function ######
     # prompt function to use. see `prompts.py` for available prompt functions.
@@ -103,7 +105,7 @@ def get_config():
     # when enabled, the model will track the mean and std of reward on a per-prompt basis and use that to compute
     # advantages. set `config.per_prompt_stat_tracking` to None to disable per-prompt stat tracking, in which case
     # advantages will be calculated using the mean and std of the entire batch.
-    config.per_prompt_stat_tracking = ml_collections.ConfigDict()
+    config.per_prompt_stat_tracking = ConfigDict()
     # number of reward values to store in the buffer for each prompt. the buffer persists across epochs.
     config.per_prompt_stat_tracking.buffer_size = 16
     # the minimum number of reward values to store in the buffer before using the per-prompt mean and std. if the buffer

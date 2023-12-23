@@ -181,12 +181,11 @@ def ddim_step_with_logprob(
         prev_sample = prev_sample_mean + std_dev_t * variance_noise
 
     # log prob of prev_sample given prev_sample_mean and std_dev_t
-    log_prob = (
-        -((prev_sample.detach() - prev_sample_mean) ** 2) / (2 * (std_dev_t**2))
-        - torch.log(std_dev_t)
-        - torch.log(torch.sqrt(2 * torch.as_tensor(math.pi)))
+    # (omitting constant terms)
+    log_prob = -((prev_sample.detach() - prev_sample_mean) ** 2) / (
+        2 * (std_dev_t**2)
     )
-    # mean along all but batch dimension
-    log_prob = log_prob.mean(dim=tuple(range(1, log_prob.ndim)))
+    # sum along all but batch dimension
+    log_prob = log_prob.sum(dim=tuple(range(1, log_prob.ndim)))
 
-    return prev_sample.type(sample.dtype), log_prob
+    return prev_sample, log_prob
