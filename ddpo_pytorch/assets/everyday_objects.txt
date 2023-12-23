@@ -1,0 +1,50 @@
+Toaster
+Chair
+Car
+Coffee cup
+Refrigerator
+Lamp
+Television
+Sofa
+Computer
+Smartphone
+Bicycle
+Table
+Bookshelf
+Clock
+Microwave
+Blender
+Vacuum cleaner
+Iron
+Washing machine
+Dryer
+Oven
+Dishwasher
+Mirror
+Picture frame
+Trash can
+Plant pot
+Water bottle
+Backpack
+Umbrella
+Sunglasses
+Wallet
+Keychain
+Pen
+Pencil
+Notebook
+Stapler
+Scissors
+Tape dispenser
+Calculator
+Eraser
+Ruler
+Glue stick
+Highlighter
+Marker
+Post-it notes
+Envelope
+Stamp
+Key
+Skull
+Flower
