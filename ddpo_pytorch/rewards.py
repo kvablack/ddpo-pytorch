@@ -29,19 +29,22 @@ def jpeg_compressibility():
     return _fn
 
 
-def aesthetic_score():
+def aesthetic_score(device=None):
     from ddpo_pytorch.aesthetic_scorer import AestheticScorer
 
-    scorer = AestheticScorer(dtype=torch.float32).cuda()
+    if device is None:
+        device = "cuda"
+
+    scorer = AestheticScorer(dtype=torch.float32).to(device)
 
     def _fn(images, prompts, metadata):
         if isinstance(images, torch.Tensor):
             images = (images * 255).round().clamp(0, 255).to(torch.uint8)
         else:
             images = images.transpose(0, 3, 1, 2)  # NHWC -> NCHW
-            images = torch.tensor(images, dtype=torch.uint8)
+            images = torch.tensor(images, dtype=torch.uint8, device=device)
         scores = scorer(images)
-        return scores, {}
+        return scores.detach().cpu().numpy(), {}
 
     return _fn
 
@@ -185,5 +188,56 @@ def llava_bertscore():
             all_info["outputs"] += np.array(response_data["outputs"]).squeeze().tolist()
 
         return np.array(all_scores), {k: np.array(v) for k, v in all_info.items()}
+
+    return _fn
+
+
+def imagereward(device=None):
+    import ImageReward
+
+    if device is None:
+        device = "cuda"
+
+    model = ImageReward.load("ImageReward-v1.0").to(device)
+
+    @torch.no_grad()
+    def _fn(images, prompts, metadata):
+        if isinstance(images, torch.Tensor):
+            device = images.get_device()
+            images = (images * 255).round().clamp(0, 255).to(torch.uint8).cpu().numpy()
+            images = images.transpose(0, 2, 3, 1)  # NCHW -> NHWC
+
+        # text encode
+        text_input = model.blip.tokenizer(
+            prompts,
+            padding="max_length",
+            truncation=True,
+            max_length=35,
+            return_tensors="pt",
+        )
+
+        images = torch.stack(
+            [model.preprocess(Image.fromarray(image)) for image in images]
+        ).to(device)
+        image_embeds = model.blip.visual_encoder(images)
+
+        # text encode cross attention with image
+        image_atts = torch.ones(
+            image_embeds.size()[:-1],
+            dtype=torch.long,
+        ).to(device)
+        text_output = model.blip.text_encoder(
+            text_input.input_ids.to(device),
+            attention_mask=text_input.attention_mask.to(device),
+            encoder_hidden_states=image_embeds,
+            encoder_attention_mask=image_atts,
+            return_dict=True,
+        )
+
+        txt_features = text_output.last_hidden_state[:, 0, :].float()  # (feature_dim)
+        rewards = model.mlp(txt_features)
+        rewards = (rewards - model.mean) / model.std
+
+        return rewards.detach().cpu().numpy()[:, 0], {}
 
     return _fn
